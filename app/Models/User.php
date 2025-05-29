@@ -12,30 +12,42 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, Notifiable, SoftDeletes, HasFactory;
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
      *
-     * @var list<string>
+     * @var array<int, string>
      */
-   protected $fillable = [
-        'nom', 
-        'prenom', 
-        'email', 
+    protected $fillable = [
+        'nom',
+        'prenom',
+        'email',
+        'password',
         'sexe',
-        'telephone', 
+        'telephone',
         'adresse',
-        'password', 
-        'statut', 
         'role',
-        'photo'
+        'status',
+        'photo',
+        // Champs spécifiques aux étudiants
+        'niveau_etude',
+        'filiere',
+        'numero_carte_etudiant',
+        // Champs spécifiques aux commerçants
+        'numero_cni',
+        'cv_url',
+        'type_commerce',
+        // Champs communs pour la réservation
+        'demande_status',
+        'type_reservation',
+        'date_demande'
     ];
 
     /**
      * The attributes that should be hidden for serialization.
      *
-     * @var list<string>
+     * @var array<int, string>
      */
     protected $hidden = [
         'password',
@@ -45,50 +57,60 @@ class User extends Authenticatable
     /**
      * Get the attributes that should be cast.
      *
-     * @return array<string, string>
+     * @var array<string, string>
      */
-   protected $casts = [
+    protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'date_demande' => 'datetime'
     ];
 
-    
-    
+    /**
+     * Get the affectations for the user.
+     */
     public function affectations()
     {
-        return $this->hasMany(Affectation::class);
+        return $this->hasMany(Affectation::class, 'id_utilisateur');
     }
-    
-    public function demandesAffectation()
-    {
-        return $this->hasMany(DemandeAffectation::class);
-    }
-    
-    public function reservations()
-    {
-        return $this->hasMany(Reservation::class);
-    }
-    
+
+    /**
+     * Get the reclamations for the user.
+     */
     public function reclamations()
     {
-        return $this->hasMany(Reclamation::class);
+        return $this->hasMany(Reclamation::class, 'id_utilisateur');
     }
-    
-    public function enquetesQHSE()
-    {
-        return $this->hasMany(EnqueteQHSE::class, 'agent_qhse_id');
-    }
-    
-      public function alerte()
+
+    /**
+     * Get the alertes for the user.
+     */
+    public function alertes()
     {
         return $this->hasMany(Alerte::class);
     }
-    // Vérifier si l'utilisateur a un rôle spécifique
 
+    /**
+     * Get the demandes d'affectation for the user.
+     */
+    public function demandesAffectation()
+    {
+        return $this->hasMany(DemandeAffectation::class, 'id_utilisateur');
+    }
+
+    /**
+     * Get the reservations for the user.
+     */
+    public function reservations()
+    {
+        return $this->hasMany(Reservation::class, 'id_utilisateur');
+    }
+
+    // Vérifier si l'utilisateur a un rôle spécifique
     public function hasRole($roles)
-{
-    return in_array($this->role, (array) $roles);
-}
+    {
+        return in_array($this->role, (array) $roles);
+    }
+
     // Ajouter un rôle à l'utilisateur
     public function assignRole($roleName)
     {

@@ -31,7 +31,7 @@ class Reclamation extends Model
     
     public function utilisateur()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'id_utlisateur');
     }
     
     public function local()

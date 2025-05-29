@@ -25,10 +25,10 @@ class Chambre extends Model
         return $this->belongsTo(Local::class, 'id_local');
     }
 
-    public function utilisateurs()
-    {
-        return $this->belongsTo(User::class, 'id_local');
-    }
+   public function utilisateurs()
+{
+    return $this->hasManyThrough(User::class, Affectation::class, 'id_chambre', 'id', 'id', 'id_utilisateur');
+}
 
     public function affectations()
     {

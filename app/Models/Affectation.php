@@ -16,6 +16,7 @@ class Affectation extends Model
         'id_demande_affectation', 
         'id_local', 
         'id_utilisateur', 
+        'id_chambre',
         'dateDebut', 
         'dateFin', 
         'type', 
@@ -35,10 +36,17 @@ class Affectation extends Model
     {
         return $this->belongsTo(Local::class);
     }
+
+public function chambre()
+{
+    return $this->belongsTo(Chambre::class, 'id_chambre');
+}
+
+
     
     public function utilisateur()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'id_utilisateur');
     }
     
     public function contrat()

@@ -9,17 +9,15 @@ return [
     | Stateful Domains
     |--------------------------------------------------------------------------
     |
-    | Requests from the following domains / hosts will receive stateful API
-    | authentication cookies. Typically, these should include your local
-    | and production domains which access your API via a frontend SPA.
+    | Listez ici les domaines qui devraient être traités comme "stateful".
+    | Pour les applications SPA, vous devez inclure votre domaine local.
     |
     */
 
     'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
         '%s%s',
         'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1',
-        Sanctum::currentApplicationUrlWithPort(),
-        // Sanctum::currentRequestHost(),
+        env('APP_URL') ? ','.parse_url(env('APP_URL'), PHP_URL_HOST) : ''
     ))),
 
     /*
@@ -38,12 +36,11 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Expiration Minutes
+    | Expiration des jetons Sanctum
     |--------------------------------------------------------------------------
     |
-    | This value controls the number of minutes until an issued token will be
-    | considered expired. This will override any values set in the token's
-    | "expires_at" attribute, but first-party sessions are not affected.
+    | Ce paramètre contrôle la durée de vie des jetons d'accès générés par
+    | Sanctum. Il est défini en minutes et doit être raisonnable.
     |
     */
 
@@ -54,31 +51,43 @@ return [
     | Token Prefix
     |--------------------------------------------------------------------------
     |
-    | Sanctum can prefix new tokens in order to take advantage of numerous
-    | security scanning initiatives maintained by open source platforms
-    | that notify developers if they commit tokens into repositories.
-    |
-    | See: https://docs.github.com/en/code-security/secret-scanning/about-secret-scanning
+    | Sanctum peut stocker les jetons dans une table de base de données en utilisant
+    | ce préfixe. Vous pouvez le modifier si vous le souhaitez, mais en utilisant
+    | un préfixe unique, vous évitez les conflits avec d'autres tables.
     |
     */
 
-    'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
+    'prefix' => 'sanctum_',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Nom du cookie Sanctum
+    |--------------------------------------------------------------------------
+    |
+    | Sanctum créera un cookie avec ce nom. Vous pouvez le modifier si vous
+    | le souhaitez, mais assurez-vous d'utiliser un nom unique pour éviter
+    | les conflits avec d'autres cookies dans votre application.
+    |
+    */
+
+    'cookie' => env(
+        'SANCTUM_COOKIE',
+        'sanctum_token'
+    ),
 
     /*
     |--------------------------------------------------------------------------
     | Sanctum Middleware
     |--------------------------------------------------------------------------
     |
-    | When authenticating your first-party SPA with Sanctum you may need to
-    | customize some of the middleware Sanctum uses while processing the
-    | request. You may change the middleware listed below as required.
+    | Lors de l'authentification de votre premier jeton d'API, Sanctum utilisera
+    | ce middleware pour s'assurer que les requêtes proviennent d'une source autorisée.
     |
     */
 
     'middleware' => [
-        'authenticate_session' => Laravel\Sanctum\Http\Middleware\AuthenticateSession::class,
-        'encrypt_cookies' => Illuminate\Cookie\Middleware\EncryptCookies::class,
-        'validate_csrf_token' => Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+        'verify_csrf_token' => App\Http\Middleware\VerifyCsrfToken::class,
+        'encrypt_cookies' => App\Http\Middleware\EncryptCookies::class,
     ],
 
 ];

@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('id_demande_affectation')->constrained('demande_affectations')->onDelete('cascade');
             $table->foreignId('id_local')->constrained('locaux')->onDelete('cascade');
             $table->foreignId('id_utilisateur')->constrained('users')->onDelete('cascade');
+            $table->foreignId('id_chambre')->constrained('chambres')->onDelete('cascade');
             $table->date('dateDebut');
             $table->date('dateFin');
             $table->enum('type', ['Temporaire', 'Permanente', 'Saisonniere']);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Affectation;
+use App\Models\Chambre;
 use App\Models\DemandeAffectation;
 use App\Models\Local;
 use App\Models\User;
@@ -15,26 +16,32 @@ use function Illuminate\Log\log;
 
 class AffectationController extends Controller
 {
+    protected $rules = [
+        'id_utilisateur' => 'required|exists:users,id',
+        'id_local' => 'required|exists:locals,id',
+        'dateDebut' => 'required|date',
+        'dateFin' => 'required|date|after:dateDebut',
+        'type' => 'required|in:temporaire,permanent'
+    ];
 
-    public function index(Request $request) {
-        
+    public function index(Request $request)
+    {
        $query = Affectation::with(['utilisateur', 'local']);
+
         // Filtres
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
-                $q->where('description', 'like', "%$search%")
-                   ->orWhereHas('utilisateur', function ($q2) use ($search) {
+                $q->whereHas('utilisateur', function ($q2) use ($search) {
                 $q2->where('nom', 'like', "%$search%")
                    ->orWhere('prenom', 'like', "%$search%");
               })
                 ->orWhereHas('local', function ($q3) use ($search) {
                 $q3->where('nom', 'like', "%$search%");
               });
-           
             });
-        
         }
 
+        // Filtres supplémentaires
         if ($utilisateurId = $request->input('id_utilisateur')) {
             $query->where('id_utilisateur', $utilisateurId);
         }
@@ -50,267 +57,156 @@ class AffectationController extends Controller
         // Tri
         $orderBy = $request->input('orderBy', 'dateDebut');
         $orderDir = $request->input('orderDir', 'desc');
-
         $query->orderBy($orderBy, $orderDir);
 
         // Pagination
         $perPage = $request->input('perPage', 15);
-        $affectations = $query->with(['utilisateur', 'local'])->paginate($perPage);
+        $affectations = $query->paginate($perPage);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $affectations
-        ]);
+        return $this->jsonResponse($affectations, 'Liste des affectations récupérée avec succès');
     }
 
-    public function show($id){
+    public function store(Request $request)
+{
+        $validated = $request->validate($this->rules);
 
-        $affectation = Affectation::with(['utilisateur', 'local'])->find($id);
+        // Vérifier la disponibilité du local
+        $local = Local::findOrFail($validated['id_local']);
+        $disponible = $local->verifierDisponibilite(
+            $validated['dateDebut'],
+            $validated['dateFin']
+        );
 
-        if(!$affectation){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Affectation non trouvee'
-            ], 404);
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'message' => $affectation
-        ]);
+        if (!$disponible) {
+            return $this->jsonResponse(
+                null,
+                'Ce local n\'est pas disponible pour la période demandée',
+                'error',
+                400
+            );
     }
 
-    public function store(Request $request){
+        $affectation = Affectation::create($validated);
+        $local->update(['disponible' => false]);
 
-        $validator = Validator::make($request->all(), [
-            'id_demande_affectation' => 'required|exists:demande_affectations,id',
-            'dateDebut' => 'required|date',
-            'dateFin' => 'required|date|after:dateDebut',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
-        }
-
-        $demande = DemandeAffectation::findOrFail($request->id_demande_affectation);
-
-        if ($demande->statut !== 'Approuvee') {
-            return response()->json(['error' => 'La demande doit etre approuvée avant affectation.'], 400);
-        }
-
-        $affectation = Affectation::create([
-            'id_demande_affectation' => $demande->id,
-            'id_local' => $demande->id_local,
-            'id_utilisateur' => $demande->id_utilisateur,
-            'type' => $demande->typeOccupation,
-            'dateDebut' => $request->dateDebut,
-            'dateFin' => $request->dateFin,
-            'statut' => 'Active'
-        ]);
-
-        $demande->local->update(['disponible' => false]);
-
-        return response()->json($affectation, 201);
+        return $this->jsonResponse(
+            $affectation->load(['utilisateur', 'local']),
+            'Affectation créée avec succès',
+            'success',
+            201
+        );
     }
 
+    public function show($id)
+    {
+        $affectation = Affectation::with(['utilisateur', 'local'])->findOrFail($id);
+        return $this->jsonResponse($affectation);
+}
 
-    public function update(Request $request, $id){
+    public function update(Request $request, $id)
+    {
+        $affectation = Affectation::findOrFail($id);
 
-        $affectation = Affectation::find($id);
-
-        if(!$affectation){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Affectation non trouve'
-            ], 404);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'dateDebut' => 'nullable|date',
-            'dateFin' => 'nullable|date|after:dateDebut',
-            'statut' => 'nullable|in:Active,Expire,Resiliee'
+        $validated = $request->validate([
+            'dateDebut' => 'sometimes|required|date',
+            'dateFin' => 'sometimes|required|date|after:dateDebut',
+            'statut' => 'sometimes|required|in:active,terminee,resiliee'
         ]);
 
-        if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
-        }
+        $affectation->update($validated);
 
-        $affectation->update($request->only(['dateDebut', 'dateFin', 'statut']));
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Affectation mis a jour',
-            'affectation' => $affectation
-        ]);
+        return $this->jsonResponse(
+            $affectation->fresh(['utilisateur', 'local']),
+            'Affectation mise à jour avec succès'
+        );
     }
 
-    public function destroy($id){
+    public function destroy($id)
+    {
+        $affectation = Affectation::findOrFail($id);
+        $local = $affectation->local;
 
-        $affectation = Affectation::with('local')->find($id);
+        $affectation->delete();
+        $local->update(['disponible' => true]);
 
-        if(!$affectation){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Affectation non trouve'
-            ], 404);
-        }
+        return $this->jsonResponse(null, 'Affectation supprimée avec succès');
+    }
+
+    public function resilier(Request $request, $id)
+    {
+        $request->validate(['raison' => 'required|string']);
+
+        $affectation = Affectation::findOrFail($id);
+
+        $affectation->update([
+            'statut' => 'resiliee',
+            'dateFin' => now(),
+            'remarques' => $request->raison
+        ]);
 
         $affectation->local->update(['disponible' => true]);
 
-        $affectation->delete();
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Affectation supprime'
-        ]);
+        return $this->jsonResponse($affectation, 'Affectation résiliée avec succès');
     }
 
-    public function resilier($id, Request $request){
-
-        $affectation = Affectation::findOrFail($id);
-
-        try {
-
-            $affectation->resilier($request->input('raison'));
-            return response()->json(['message' => 'Affectation résiliée avec succès.']);
-
-        } catch (\Exception $e) {
-
-            return response()->json(['error' => $e->getMessage()], 400);
-
-        }
-    }
-
-    public function renouveler($id, Request $request){
-
-        $validator = Validator::make($request->all(), [
-            'nouvelle_date_fin' => 'required|date|after:today',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['error' => $validator->errors()], 422);
-        }
-
-        $affectation = Affectation::findOrFail($id);
-
-        try {
-            $affectation->renouveler($request->input('nouvelle_date_fin'));
-            return response()->json(['message' => 'Affectation renouvelée avec succès.']);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 400);
-        }
-    }
-
-    public function approuveDemande(Request $request, $id){
-
+    public function renouveler(Request $request, $id)
+    {
         $request->validate([
-            'id_local' => 'required|exists:locaux,id',
-            'dateDebut' => 'required|date',
-            'dateFin' => 'required|date|after:date_debut',
+            'nouvelle_date_fin' => 'required|date|after:today'
         ]);
 
-        $demande = DemandeAffectation::find($id);
-
-        if(!$demande){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Demande non trouve'
-            ], 404);
-        }
-
-        if($demande->statut !== 'en attente'){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Demande a deja ete traite'
-            ], 400);
-        }
-
-        $local = Local::find($request->input('id_local'));
-
-        $disponible = $local->verifierDisponibilite(
-            $request->input('dateDebut'),
-            $request->input('dateFin')
+        $affectation = Affectation::findOrFail($id);
+        
+        // Vérifier si le renouvellement est possible
+        $disponible = $affectation->local->verifierDisponibilite(
+            $affectation->dateFin,
+            $request->nouvelle_date_fin
         );
 
-        if(!$disponible){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Ce local n\'est pas $disponible'
-            ], 400);
+        if (!$disponible) {
+            return $this->jsonResponse(
+                null,
+                'Le renouvellement n\'est pas possible pour cette période',
+                'error',
+                400
+            );
         }
 
-        $affectation = Affectation::create([
-            'id_utilisateur' => $demande->id_utilisateur,
-            'id_local' => $request->input('id_local'),
-            'dateDebut' => $request->input('date_debut'),
-            'dateFin' => $request->input('date_fin'),
-            'statut' => 'Active'
+        $affectation->update([
+            'dateFin' => $request->nouvelle_date_fin,
+            'dernierRenouvellement' => now()
         ]);
         
-        // Mettre à jour la demande
-        $demande->update([
-            'statut' => 'approuvee',
-            'id_affectation' => $affectation->id,
-            'traite_par' => Auth::id(),
-            'traite_le' => now()
-        ]);
-        
-        // Mettre à jour le statut du local
-        $local->update(['disponible' => false]);
-        
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Demande approuvée et affectation créée avec succès',
-            'data' => $affectation
-        ], 201);
+        return $this->jsonResponse($affectation, 'Affectation renouvelée avec succès');
     }
 
-    public function getAffectationsUtilisateur($userId)
+    public function historiqueLocal($localId)
     {
-        $affectations = Affectation::with(['local.batiment'])
-            ->where('id_utilisateur', $userId)
+        $historique = Affectation::where('id_local', $localId)
+            ->with(['utilisateur', 'contrat'])
             ->orderBy('dateDebut', 'desc')
-            ->get();
+            ->paginate(15);
         
-        return response()->json([
-            'status' => 'success',
-            'data' => $affectations
-        ]);
+        return $this->jsonResponse($historique, 'Historique des affectations du local récupéré');
     }
 
-    public function validerDemandeEtLancerEnquete(Request $request, $demandeId)
+    public function historiqueUtilisateur($userId)
     {
-        // 1. Récupérer la demande d'affectation
-        $demande = DemandeAffectation::findOrFail($demandeId);
+        $historique = Affectation::where('id_utilisateur', $userId)
+            ->with(['local', 'contrat'])
+            ->orderBy('dateDebut', 'desc')
+            ->paginate(15);
 
-        // 2. Valider la demande (ex. : mettre à jour son statut)
-        $demande->update([
-            'statut' => 'Validee',
-        ]);
-
-        // 3. Sélectionner un agent QHSE disponible
-        $agentQhse = User::whereHas('roles', function ($q) {
-            $q->where('nom', 'Agent QHSE');
-        })->inRandomOrder()->first(); // ou selon une logique métier
-
-        if (!$agentQhse) {
-            return response()->json(['message' => 'Aucun agent QHSE disponible'], 404);
-        }
-
-        // 4. Lancer l’enquête QHSE en appelant la méthode du modèle
-        $enquete = $demande->initierEnqueteQHSE($agentQhse->id);
-
-        return response()->json([
-            'message' => 'Demande validée et enquête QHSE lancée',
-            'enquete' => $enquete,
-        ]);
+        return $this->jsonResponse($historique, 'Historique des affectations de l\'utilisateur récupéré');
     }
 
-    public function getEtudiantsNonAffectes()
-{
-    $etudiants = User::whereNull('id_affectation')->get();
-    return response()->json($etudiants); // important
-}
-
+    protected function jsonResponse($data, $message = '', $status = 'success', $code = 200)
+    {
+        return response()->json([
+            'status' => $status,
+            'message' => $message,
+            'data' => $data
+        ], $code);
+    }
 }
 

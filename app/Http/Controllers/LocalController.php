@@ -3,24 +3,57 @@
 namespace App\Http\Controllers;
 
 use App\Models\Local;
-use FontLib\Table\Type\loca;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class LocalController extends Controller
 {
-    public function index(Request $request){
+    protected $rules = [
+        'nom' => 'required|string|max:255',
+        'id_batiment' => 'required|exists:batiments,id',
+        'type' => 'required|string',
+        'superficie' => 'nullable|numeric',
+        'capacite' => 'nullable|integer',
+        'etage' => 'nullable|string',
+        'disponible' => 'boolean',
+        'statut_conformite' => 'nullable|string',
+        'description' => 'nullable|string'
+    ];
 
-         $locaux = Local::with('batiment', 'chambres')->get();
+    public function index(Request $request)
+    {
+        $query = Local::with(['batiment', 'chambres']);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $locaux
-        ]);
+        // Filtres
+        if ($search = $request->input('search')) {
+            $query->where(function($q) use ($search) {
+                $q->where('nom', 'like', "%$search%")
+                  ->orWhere('type', 'like', "%$search%");
+            });
+        }
+
+        if ($type = $request->input('type')) {
+            $query->where('type', $type);
+        }
+
+        if ($batimentId = $request->input('id_batiment')) {
+            $query->where('id_batiment', $batimentId);
+        }
+
+        // Tri
+        $orderBy = $request->input('orderBy', 'nom');
+        $orderDir = $request->input('orderDir', 'asc');
+        $query->orderBy($orderBy, $orderDir);
+
+        // Pagination
+        $perPage = $request->input('perPage', 15);
+        $locaux = $query->paginate($perPage);
+
+        return $this->jsonResponse($locaux, 'Liste des locaux récupérée avec succès');
     }
 
-    public function show($id){
-
+    public function show($id)
+    {
         $local = Local::with([
             'batiment',
             'chambres',
@@ -32,60 +65,27 @@ class LocalController extends Controller
             'cartographieElement'
         ])->findOrFail($id);
 
-        if(!$local){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Local non trouve'
-            ], 404);
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $local
-        ]);
+        return $this->jsonResponse($local);
     }
 
-    public function store(Request $request){
+    public function store(Request $request)
+    {
+        $validated = $request->validate($this->rules);
+        $local = Local::create($validated);
 
-        $validator = Validator::make($request->all(), [
-            'nom' => 'required|string|max:255',
-            'id_batiment' => 'required|exists:batiments,id',
-            'type' => 'required|string',
-            'superficie' => 'nullable|numeric',
-            'capacite' => 'nullable|integer',
-            'etage' => 'nullable|string',
-            'disponible' => 'boolean',
-            'statut_conformite' => 'nullable|string',
-            'description' => 'nullable|string',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $local = Local::create($request->all()); 
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Local cree',
-            'data' => $local
-        ], 201);
+        return $this->jsonResponse(
+            $local->load('batiment'),
+            'Local créé avec succès',
+            'success',
+            201
+        );
     } 
 
-    public function update(Request $request, $id){
+    public function update(Request $request, $id)
+    {
+        $local = Local::findOrFail($id);
 
-        $local = Local::find($id);
-
-        if(!$local){
-            return response()->json([
-                'status' => 'error', 
-                'message' => 'Local non trouve'
-            ], 404);
-        }
-
-        
-
-        $validator = Validator::make($request->all(), [
+        $validated = $request->validate([
             'nom' => 'sometimes|string|max:255',
             'id_batiment' => 'sometimes|exists:batiments,id',
             'type' => 'sometimes|string',
@@ -94,124 +94,93 @@ class LocalController extends Controller
             'etage' => 'nullable|string',
             'disponible' => 'boolean',
             'statut_conformite' => 'nullable|string',
-            'description' => 'nullable|string',
+            'description' => 'nullable|string'
         ]);
 
-        
+        $local->update($validated);
 
-        $local->update($request->all());
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Local mis a jour',
-            'data' => $local
-        ]);
+        return $this->jsonResponse(
+            $local->fresh('batiment'),
+            'Local mis à jour avec succès'
+        );
     }
 
-    public function destroy($id){
-
-        $local = local::find($id);
-        if(!$local){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Local non trouve'
-            ],404);
-        }
-
+    public function destroy($id)
+    {
+        $local = Local::findOrFail($id);
         $local->delete();
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Local supprime avec success'
-        ]);
+        return $this->jsonResponse(null, 'Local supprimé avec succès');
     }
 
     public function estOccupe($id)
     {
         $local = Local::findOrFail($id);
-        return response()->json(['est_occupe' => $local->estOccupe()]);
+        return $this->jsonResponse(['est_occupe' => $local->estOccupe()]);
     }
 
-    public function veifierDisponibiliter(Request $request, $id){
-
-        $request->validate([
-            'date-debut' => 'required|date',
-            'date_fin' => 'required|date|after:date_debut'
+    public function verifierDisponibilite(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'dateDebut' => 'required|date',
+            'dateFin' => 'required|date|after:dateDebut'
         ]);
 
-        $local = Local::find($id);
-
-        if(!$local){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Local non trouve'
-            ], 404);
-        }
+        $local = Local::findOrFail($id);
 
         $disponible = $local->verifierDisponibilite(
-            $request->input('date_debut'),
-            $request->input('date_fin')
+            $validated['dateDebut'],
+            $validated['dateFin']
         );
 
-        return response()->json([
-            'status' => 'success',
-            'data'=>[
-                'disponible' => $disponible
-            ]
-            ]);
+        return $this->jsonResponse(['disponible' => $disponible]);
     }
 
-    public function getAffectationActive($id){
-        $local = Local::find($id);
-
-        if(!$local){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Local non trouve'
-            ], 404);
-        }
-
+    public function getAffectationActive($id)
+    {
+        $local = Local::findOrFail($id);
         $affectation = $local->getAffectationActive();
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $affectation
-        ]);
+        return $this->jsonResponse($affectation);
     }
 
     public function verifierConformite($id)
     {
         $local = Local::findOrFail($id);
-        $conforme = $local->verifierConformite();
-
-        return response()->json(['conforme' => $conforme]);
+        return $this->jsonResponse(['conforme' => $local->verifierConformite()]);
     }
 
     public function chambresDuPavillon($id)
     {
-        $local = Local::find($id);
-
-        if (!$local) {
-            return response()->json(['error' => 'Local non trouvé'], 404);
-        }
+        $local = Local::findOrFail($id);
 
         if ($local->type !== 'Pavillon') {
-            return response()->json(['error' => 'Ce local n’est pas un pavillon'], 400);
+            return $this->jsonResponse(
+                null,
+                'Ce local n\'est pas un pavillon',
+                'error',
+                400
+            );
         }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $local->chambres
-        ]);
+        return $this->jsonResponse($local->chambres);
 }   
-
 
     public function locauxParType($type)
     {
-        // Ex: terrain, cantine, pavillon
-        $locaux = Local::where('type', $type)->get();
-        return response()->json($locaux);
+        $locaux = Local::where('type', $type)
+            ->with('batiment')
+            ->paginate(15);
+
+        return $this->jsonResponse($locaux);
     }
 
-
+    protected function jsonResponse($data, $message = '', $status = 'success', $code = 200)
+    {
+        return response()->json([
+            'status' => $status,
+            'message' => $message,
+            'data' => $data
+        ], $code);
+    }
 }

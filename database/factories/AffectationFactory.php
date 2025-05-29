@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Chambre;
 use App\Models\User;
 use App\Models\Local;
 use App\Models\DemandeAffectation;
@@ -18,6 +19,7 @@ class AffectationFactory extends Factory
             'id_demande_affectation' => DemandeAffectation::inRandomOrder()->first()?->id ?? DemandeAffectation::factory(),
             'id_local' => Local::inRandomOrder()->first()?->id ?? Local::factory(),
             'id_utilisateur' => User::inRandomOrder()->first()?->id ?? User::factory(),
+            'id_chambre' => Chambre::inRandomOrder()->first()?->id ?? Chambre::factory(),
             'dateDebut' => $dateDebut->format('Y-m-d'),
             'dateFin' => $dateFin->format('Y-m-d'),
             'type' => $this->faker->randomElement(['Temporaire', 'Permanente', 'Saisonniere']),

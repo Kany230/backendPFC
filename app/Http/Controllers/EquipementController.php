@@ -3,142 +3,106 @@
 namespace App\Http\Controllers;
 
 use App\Models\Equipement;
+use App\Services\EquipementService;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 
 class EquipementController extends Controller
 {
-    public function index(){
-        $equipements = Equipement::with('local')->get();
+    private $equipementService;
 
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $equipements
-        ]);
+    public function __construct(EquipementService $equipementService)
+    {
+        $this->equipementService = $equipementService;
     }
 
-    public function show($id){
-
-        $equipement = Equipement::with('local', 'maintenances')->findOrFail($id);
-
-        if(!$equipement){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Equipement demarrer'
-            ], 404);
+    /**
+     * Récupérer les équipements d'une chambre
+     */
+    public function getEquipementsChambre(int $chambreId): JsonResponse
+    {
+        try {
+            $equipements = $this->equipementService->getEquipementsChambre($chambreId);
+            return response()->json($equipements);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Erreur lors de la récupération des équipements'], 500);
         }
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $equipement
-        ]);
     }
 
-    public function store(Request $request){
-
-        $request->validate([
-            'id_local' => 'required|exists:locals,id',
-            'nom' => 'required|string|max:255',
-            'type' => 'required|in:Mobilier,Électroménager,Informatique,Chauffage,Plomberie,Électricité,Autre',
-            'numeroSerie' => 'nullable|string|max:255',
-            'dateAcquisition' => 'nullable|date',
-            'dateFinGarantie' => 'nullable|date',
-            'etat' => 'required|in:Neuf,Bon,Usé,Défaillant,Hors service',
-            'valeur' => 'nullable|numeric',
-            'description' => 'nullable|string'
-        ]);
-
-        $equipement = Equipement::create($request->all());
-
-        return response()->json([
-            'message' => 'Équipement cree',
-            'data' => $equipement
-        ], 201);
-    }
-
-    public function update(Request $request, $id){
-
-        $equipement = Equipement::findOrFail($id);
-
-        if(!$equipement){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Equipement demarrer'
-            ], 404);
+    /**
+     * Récupérer les équipements d'une cantine
+     */
+    public function getEquipementsCantine(int $cantineId): JsonResponse
+    {
+        try {
+            $equipements = $this->equipementService->getEquipementsCantine($cantineId);
+            return response()->json($equipements);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Erreur lors de la récupération des équipements'], 500);
         }
-
-        $request->validate([
-            'id_local' => 'sometimes|required|exists:locals,id',
-            'nom' => 'sometimes|required|string|max:255',
-            'type' => 'sometimes|required|in:Mobilier,Électroménager,Informatique,Chauffage,Plomberie,Électricité,Autre',
-            'numeroSerie' => 'nullable|string|max:255',
-            'dateAcquisition' => 'nullable|date',
-            'dateFinGarantie' => 'nullable|date',
-            'etat' => 'sometimes|required|in:Neuf,Bon,Usé,Défaillant,Hors service',
-            'valeur' => 'nullable|numeric',
-            'description' => 'nullable|string'
-        ]);
-
-        $equipement->update($request->all());
-
-        return response()->json([
-            'message' => 'Equipement mis a jour',
-            'data' => $equipement
-        ]);
     }
 
-    public function destroy($id){
-
-        $equipement = Equipement::findOrFail($id);
-
-        if(!$equipement){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Equipement demarrer'
-            ], 404);
+    /**
+     * Récupérer un équipement par son ID
+     */
+    public function show(int $id): JsonResponse
+    {
+        try {
+            $equipement = Equipement::findOrFail($id);
+            return response()->json($equipement);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Équipement non trouvé'], 404);
         }
-
-        $equipement->delete();
-
-        return response()->json([
-            'message' => 'Équipement supprimé avec succès'
-        ]);
     }
 
-    public function historiqueMaintenance($id){
+    /**
+     * Créer un nouvel équipement
+     */
+    public function store(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'nom' => 'required|string|max:255',
+                'description' => 'required|string',
+                'type' => 'required|in:Chambre,Cantine',
+                'local_id' => 'required|integer',
+                'local_type' => 'required|in:Chambre,Cantine'
+            ]);
 
-        $equipement = Equipement::findOrFail($id);
-
-        if(!$equipement){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Equipement demarrer'
-            ], 404);
+            $equipement = $this->equipementService->creerEquipement($validated);
+            return response()->json($equipement, 201);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Erreur lors de la création de l\'équipement'], 500);
         }
-
-        $historique = $equipement->getHistoriqueMaintenance();
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $historique
-        ]);
     }
 
-    public function necessiteMaintenance($id){
+    /**
+     * Mettre à jour l'état d'un équipement
+     */
+    public function updateEtat(Request $request, int $id): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'etat' => 'required|in:Bon,Moyen,Mauvais'
+            ]);
 
-        $equipement = Equipement::findOrFail($id);
-
-        if(!$equipement){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Equipement non trouve'
-            ], 404);
+            $equipement = $this->equipementService->updateEtatEquipement($id, $validated['etat']);
+            return response()->json($equipement);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Erreur lors de la mise à jour de l\'état'], 500);
         }
+    }
 
-        $necessite = $equipement->necessiteMaintenance();
-
-        return response()->json([
-            'necessiteMaintenance' => $necessite
-        ]);
+    /**
+     * Enregistrer une maintenance d'équipement
+     */
+    public function enregistrerMaintenance(int $id): JsonResponse
+    {
+        try {
+            $equipement = $this->equipementService->enregistrerMaintenance($id);
+            return response()->json($equipement);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Erreur lors de l\'enregistrement de la maintenance'], 500);
+        }
     }
 }

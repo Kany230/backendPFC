@@ -9,6 +9,8 @@ use App\Models\User;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
@@ -16,80 +18,66 @@ class AuthController extends Controller
 
         $request->validate([
             'email' => 'required|email',
-            'password' => 'required|string',
+            'password' => 'required',
         ]);
 
-        $credentials = $request->only('email', 'password');
-
-        if(!Auth::attempt($credentials)){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Identifiants incorrect'
-            ],401);
+        if (!Auth::attempt($request->only('email', 'password'))) {
+            throw ValidationException::withMessages([
+                'email' => ['Les informations de connexion sont incorrectes.'],
+            ]);
         }
 
-          /** @var \App\Models\User$user **/
-        $utilisateur = Auth::user();
-        if($utilisateur->statut !== 'Actif'){
+        /** @var \App\Models\User$user **/
+        $user = Auth::user();
+        if($user->statut !== 'Actif'){
             Auth::logout();
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Compte n\'est pas actif'
-            ], 403);
+            throw ValidationException::withMessages([
+                'email' => ['Votre compte n\'est pas encore activé.'],
+            ]);
         }
 
-        $token = $utilisateur->createToken('auth-token')->plainTextToken;
+        $token = $user->createToken('auth_token')->plainTextToken;
 
-return response()->json([
-    'user' => $utilisateur,
-    'token' => $token,
-    'token_type' => 'Bearer',
-]);
+        return response()->json([
+            'access_token' => $token,
+            'token_type' => 'Bearer',
+            'user' => $user,
+            'role' => $user->role
+        ]);
     }
 
     public function register(Request $request){
 
-        $data = $request->validate([
+        $request->validate([
             'nom' => 'required|string|max:255',
             'prenom' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => 'required|string|min:8',
             'sexe' => 'required|in:F,H',
-            'adresse' => 'required|string|max:255',
-            'telephone' => 'required|string|max:20',
-            'role' => 'required|string|in:etudiant,commercant',
-            'photo' => 'nullable|image|max:2048',
+            'telephone' => 'required|string',
+            'adresse' => 'required|string',
+            'role' => 'required|in:etudiant,commercant,admin,gestionnaire,technicien,agentQHSE,chefpavillon',
         ]);
 
-        if ($request->hasFile('photo')) {
-            $file = $request->file('photo');
-            $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('photos', $filename, 'public');
-            $data['photo'] = $path; 
-        }
-
-        $data['password'] = Hash::make($data['password']);
-        $data['role'] = null;
-        $data['statut'] = 'Inactif';
-
-        /** @var \App\Models\User$user **/
-        $utilisateur = User::create($data);
-
-        $token = $utilisateur->createToken('auth-token')->plainTextToken;
+        $user = User::create([
+            'nom' => $request->nom,
+            'prenom' => $request->prenom,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'sexe' => $request->sexe,
+            'telephone' => $request->telephone,
+            'adresse' => $request->adresse,
+            'role' => $request->role,
+            'statut' => 'Inactif',
+        ]);
 
         return response()->json([
-            'status' => 'success',
-            'message' => 'Inscription réussie, en attente de validation par un administrateur.',
-            'data' => [
-               'utilisateur' => $utilisateur,
-               'token' => $token,
-               'token_type' => 'Bearer'
-        ]
-    ], 201);
-
+            'message' => 'Inscription réussie. En attente de validation.',
+            'user' => $user
+        ], 201);
     }
 
-    public function logout(){
+    public function logout(Request $request){
 
         /** @var \App\Models\User$user **/
         $user = Auth::user();
@@ -97,19 +85,18 @@ return response()->json([
         $user->currentAccessToken()->delete();
 
         return response()->json([
-            'status'=> 'success',
-            'message' => 'Deconnexion reussie'
+            'message' => 'Déconnexion réussie'
         ]);
     }
 
-    public function me(){
+    public function me(Request $request){
 
         /** @var \App\Models\User$user **/
-        $utilisateur = Auth::user();
+        $user = Auth::user();
 
         return response()->json([
-            'status' => 'success',
-            'data' => $utilisateur
+            'user' => $user,
+            'role' => $user->role
         ]);
     }
 
@@ -134,51 +121,73 @@ return response()->json([
     public function reinitialiserPassword(Request $request){
 
         $request->validate([
-            'email' => 'required|email|exists:users,email'
+            'email' => 'required|email',
         ]);
 
-        $utilisateur = User::where('email', $request->input('email'))->first();
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
 
-        $newPassword = Str::random(8);
+        if ($status === Password::RESET_LINK_SENT) {
+            return response()->json([
+                'message' => 'Un lien de réinitialisation a été envoyé à votre adresse email.'
+            ]);
+        }
 
-        $utilisateur->update([
-            'password' => Hash::make($newPassword)
-        ]);
-
-        Mail::to($utilisateur->email)->send(new NouveauMotDePasse($newPassword));
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'un nouveau mot de passe a ete envoyer dans votre email'
+        throw ValidationException::withMessages([
+            'email' => [trans($status)],
         ]);
     }
     
     public function changerPassword(Request $request){
 
         $request->validate([
-            'ancien_password' => 'required',
-            'new_password' => 'reuired|string|min:8|confirmed'
+            'current_password' => 'required',
+            'password' => 'required|min:8|confirmed',
         ]);
 
        /** @var \App\Models\User$user **/
-        $utilisateur = Auth::user();
+        $user = Auth::user();
 
-        if(!Hash::check($request->input('ancien_password'), $utilisateur->password)){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'mot de passe incorrect'
+        if (!Hash::check($request->current_password, $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => ['Le mot de passe actuel est incorrect.'],
             ]);
         }
 
-        $utilisateur->update([
-            'password' => Hash::make($request->input('new_password'))
-        ]);
+        $user->password = Hash::make($request->password);
+        $user->save();
 
         return response()->json([
-            'status' => 'success',
-            'message' => 'Mot de passe mis a jour'
+            'message' => 'Mot de passe modifié avec succès'
+        ]);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|min:8|confirmed',
         ]);
 
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->password = Hash::make($password);
+                $user->setRememberToken(Str::random(60));
+                $user->save();
+            }
+        );
 
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json([
+                'message' => 'Mot de passe réinitialisé avec succès'
+            ]);
+        }
+
+        throw ValidationException::withMessages([
+            'email' => [trans($status)],
+        ]);
     }
 }

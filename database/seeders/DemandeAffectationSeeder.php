@@ -9,6 +9,6 @@ class DemandeAffectationSeeder extends Seeder
 {
     public function run(): void
     {
-        DemandeAffectation::factory()->count(30)->create();
+        DemandeAffectation::factory()->count(10)->create();
     }
 }

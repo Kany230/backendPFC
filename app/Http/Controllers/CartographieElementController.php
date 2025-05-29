@@ -4,139 +4,99 @@ namespace App\Http\Controllers;
 
 use App\Models\CartographieElement;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class CartographieElementController extends Controller
 {
-    public function index(){
+    public function index(Request $request)
+    {
+        $query = CartographieElement::query();
 
-        $data = CartographieElement::all();
-        return response()->json([
-            'status' => 'success',
-            'data' => $data
-        ]);
-    }
-
-    public function store(Request $request){
-
-        $data = $request->validate([
-            'id_batiment' => 'required|exists:batiments,id',
-            'id_local' => 'nullable|exists:locals,id',
-            'type' => 'required|string',
-            'coordonnees_x' => 'required|numeric',
-            'coordonnees_y' => 'required|numeric',
-            'largeur' => 'required|numeric',
-            'hauteur' => 'required|numeric',
-            'rotation' => 'required|numeric',
-            'couleur' => 'nullable|string',
-            'label' => 'nullable|string',
-            'details' => 'nullable|array'
-        ]);
-
-        $element = CartographieElement::create($data);
-        return response()->json([
-            'status' => 'success',
-            'data' => $element
-        ], 201);
-    }
-
-    public function show($id){
-        $element = CartographieElement::findOrFail($id);
-        return response()->json([
-            'status' => 'success',
-            'data' => $element
-        ]);
-    }
-
-    public function update(Request $request, $id){
-
-        $element = CartographieElement::findOrFail($id);
-
-        $data = $request->validate([
-            'coordonnees_x' => 'nullable|numeric',
-            'coordonnees_y' => 'nullable|numeric',
-            'largeur' => 'nullable|numeric',
-            'hauteur' => 'nullable|numeric',
-            'rotation' => 'nullable|numeric',
-            'couleur' => 'nullable|string',
-            'label' => 'nullable|string',
-            'details' => 'nullable|array'
-        ]);
-
-        $element->update($data);
-        return response()->json([
-            'status' => 'success',
-            'data' => $element
-        ]);
-    }
-
-    public function destroy($id){
-
-        $element = CartographieElement::findOrFail($id);
-
-        if(!$element){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Element non trouve'
-            ], 404);
+        // Filtrer par bâtiment si l'ID est fourni
+        if ($request->has('batiment_id')) {
+            $query->where('batiment_id', $request->batiment_id);
         }
-        $element->delete();
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Element supprimer'
-        ]);
+        $elements = $query->get();
+        return response()->json($elements);
+    }
+
+    public function show(CartographieElement $element)
+    {
+        return response()->json($element);
+    }
+
+    public function store(Request $request)
+    {
+        $validator = Validator::make($request->all(), CartographieElement::$rules);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+    }
+
+        $element = CartographieElement::create($request->all());
+        return response()->json($element, 201);
+    }
+
+    public function update(Request $request, CartographieElement $element)
+    {
+        $validator = Validator::make($request->all(), CartographieElement::$rules);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $element->update($request->all());
+        return response()->json($element);
+    }
+
+    public function destroy(CartographieElement $element)
+    {
+        $element->delete();
+        return response()->json(null, 204);
     }
  
-     // Mise a jour de la position (coordonnées)
-    public function updatePosition(Request $request, $id)
+    public function updatePosition(Request $request, CartographieElement $element)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'coordonnees_x' => 'required|numeric',
             'coordonnees_y' => 'required|numeric'
         ]);
 
-        $element = CartographieElement::findOrFail($id);
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
         $element->updatePosition($request->coordonnees_x, $request->coordonnees_y);
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Position mis a jour', 
-            'element' => $element
-        ]);
+        return response()->json($element);
     }
 
-    // Mise a jour des dimensions
-    public function updateDimensions(Request $request, $id)
+    public function updateDimensions(Request $request, CartographieElement $element)
     {
-        $request->validate([
-            'largeur' => 'required|numeric',
-            'hauteur' => 'required|numeric'
+        $validator = Validator::make($request->all(), [
+            'largeur' => 'required|numeric|min:0',
+            'hauteur' => 'required|numeric|min:0'
         ]);
 
-        $element = CartographieElement::findOrFail($id);
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
         $element->updateDimensions($request->largeur, $request->hauteur);
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Dimensions mis a jour', 
-            'element' => $element
-        ]);
+        return response()->json($element);
     }
 
-    // Mise à jour de la rotation
-    public function updateRotation(Request $request, $id)
+    public function updateRotation(Request $request, CartographieElement $element)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'rotation' => 'required|numeric'
         ]);
 
-        $element = CartographieElement::findOrFail($id);
-        $element->updateRotation($request->rotation);
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Rotation mise à jour avec succès.',
-            'element' => $element
-        ]);
+        $element->updateRotation($request->rotation);
+        return response()->json($element);
     }
 }

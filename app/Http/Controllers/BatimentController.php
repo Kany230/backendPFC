@@ -7,173 +7,135 @@ use Illuminate\Http\Request;
 
 class BatimentController extends Controller
 {
+    protected $rules = [
+        'nom' => 'required|string',
+        'adresse' => 'required|string',
+        'superficie' => 'nullable|numeric',
+        'description' => 'nullable|string',
+        'dateConstruction' => 'nullable|date',
+        'localisation_lat' => 'nullable|numeric',
+        'localisation_lng' => 'nullable|numeric'
+    ];
 
-
-    public function index(Request $request){
-        //Requete avec filtre, tri et pagination
+    public function index(Request $request)
+    {
         $query = Batiment::query();
 
-        //Rechercher par nom
-        if($search = $request->input('search')){
-            $query->where('nom', 'like', "%$search%");
+        // Filtres
+        if ($search = $request->input('search')) {
+            $query->where(function($q) use ($search) {
+                $q->where('nom', 'like', "%$search%")
+                  ->orWhere('adresse', 'like', "%$search%");
+            });
         }
 
-        //Trier par champs et direction
+        // Tri
         $orderBy = $request->input('orderBy', 'nom');
         $orderDir = $request->input('orderDir', 'asc');
         $query->orderBy($orderBy, $orderDir);
 
-        //Controle le nombre d'elements pas page
+        // Pagination
         $perPage = $request->input('perPage', 15);
         $batiments = $query->paginate($perPage);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $batiments
-        ]);
-
+        return $this->jsonResponse($batiments, 'Liste des bâtiments récupérée avec succès');
     }
 
-    public function show($id){
-
-        $batiment = Batiment::with(['locaux.chambres'])->find($id);
-
-        if(!$batiment){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Batiment non trouve'
-            ]);
-        }
-
-        return response()->json([
-            'status'=> 'success',
-            'data'=> $batiment
-        ]);
-
+    public function show($id)
+    {
+        $batiment = Batiment::with(['locaux.chambres'])->findOrFail($id);
+        return $this->jsonResponse($batiment);
     }
 
     public function store(Request $request)
     {
-        $data = $request->validate([
-            'nom' => 'required|string',
-            'adresse' => 'required|string',
-            'superficie' => 'nullable|numeric',
-            'description' => 'nullable|string',
-            'dateConstruction' => 'nullable|date',
-            'localisation_lat' => 'nullable|numeric',
-            'localisation_lng' => 'nullable|numeric',
-        ]);
+        $validated = $request->validate($this->rules);
+        $batiment = Batiment::create($validated);
 
-        
-        $batiment = Batiment::create($data);
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $batiment
-        ]);
+        return $this->jsonResponse(
+            $batiment,
+            'Bâtiment créé avec succès',
+            'success',
+            201
+        );
     }
 
     public function update(Request $request, $id)
     {
         $batiment = Batiment::findOrFail($id);
 
-        $data = $request->validate([
-            'nom' => 'required|string',
-            'adresse' => 'required|string',
+        $validated = $request->validate([
+            'nom' => 'sometimes|string',
+            'adresse' => 'sometimes|string',
             'superficie' => 'nullable|numeric',
             'description' => 'nullable|string',
             'dateConstruction' => 'nullable|date',
             'localisation_lat' => 'nullable|numeric',
-            'localisation_lng' => 'nullable|numeric',
+            'localisation_lng' => 'nullable|numeric'
         ]);
 
-        $batiment->update($data);
+        $batiment->update($validated);
 
-        return $batiment;
+        return $this->jsonResponse(
+            $batiment->fresh(),
+            'Bâtiment mis à jour avec succès'
+        );
     }
 
-    public function destroy($id){
-        
-        $batiment = Batiment::find($id);
-
-        if(!$batiment){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Batiment non trouve'
-            ], 404);
-        }
-
+    public function destroy($id)
+    {
+        $batiment = Batiment::findOrFail($id);
         $batiment->delete();
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Batiment supprime aves success'
-        ]);
+        return $this->jsonResponse(null, 'Bâtiment supprimé avec succès');
     }
 
-    public function getStatistiques($id){
+    public function occupants($id)
+    {
+        $batiment = Batiment::findOrFail($id);
+        $occupants = $batiment->getOccupants();
 
-        $batiment = Batiment::find($id);
-
-        if(!$batiment){
-            return response()->json([
-                'status'=>'error',
-                'message'=>'Batiment non trouve'
-            ], 404);
-        }
-
-        $statistiques = $batiment->getStatiqueOccupation();
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $statistiques
-        ]);
+        return $this->jsonResponse($occupants, 'Liste des occupants récupérée avec succès');
     }
 
-    public function getRevenus(Request $request, $id){
+    public function getRevenus($id)
+    {
+        $batiment = Batiment::findOrFail($id);
+        $revenus = $batiment->calculerRevenus();
 
-        $batiment = Batiment::find($id);
-
-        if(!$batiment){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Batiment non trouve'
-            ], 404);
+        return $this->jsonResponse($revenus, 'Revenus du bâtiment calculés avec succès');
         }
 
-        $dateDebut = $request->input('dateDebut');
-        $dateFin = $request->input('dateFin');
+    public function revenusParAnnee($id)
+    {
+        $batiment = Batiment::findOrFail($id);
+        $revenus = $batiment->calculerRevenusParAnnee();
 
-        $revenus = $batiment->getRevenus($dateDebut, $dateFin);
-
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'revenus'=> $revenus,
-                'periode' => [
-                    'debut' => $dateDebut,
-                    'fin' => $dateFin
-                ]
-            ]
-        ]);
+        return $this->jsonResponse($revenus, 'Revenus annuels calculés avec succès');
     }
 
     public function revenusParMois($id, $annee = null)
     {
         $batiment = Batiment::findOrFail($id);
-        return $batiment->getRevenusParMois($annee);
+        $revenus = $batiment->calculerRevenusParMois($annee);
+
+        return $this->jsonResponse($revenus, 'Revenus mensuels calculés avec succès');
     }
 
-    public function revenusParAnnee($id)
+    public function getStatistiques($id)
     {
         $batiment = Batiment::findOrFail($id);
-        return $batiment->getRevenusParAnnee();
+        $stats = $batiment->getStatistiques();
+
+        return $this->jsonResponse($stats, 'Statistiques du bâtiment récupérées avec succès');
     }
 
-    // Liste des occupants
-    public function occupants($id)
+    protected function jsonResponse($data, $message = '', $status = 'success', $code = 200)
     {
-        $batiment = Batiment::findOrFail($id);
-        return $batiment->getOccupants();
+        return response()->json([
+            'status' => $status,
+            'message' => $message,
+            'data' => $data
+        ], $code);
     }
 }
