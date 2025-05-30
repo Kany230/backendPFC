@@ -38,7 +38,7 @@ class BatimentController extends Controller
         $perPage = $request->input('perPage', 15);
         $batiments = $query->paginate($perPage);
 
-        return $this->jsonResponse($batiments, 'Liste des bâtiments récupérée avec succès');
+        return view('batiments.index', compact('batiments'));
     }
 
     public function show($id)
@@ -128,6 +128,16 @@ class BatimentController extends Controller
         $stats = $batiment->getStatistiques();
 
         return $this->jsonResponse($stats, 'Statistiques du bâtiment récupérées avec succès');
+    }
+
+    public function getBatimentsForMap()
+    {
+        $batiments = Batiment::select('id', 'nom', 'adresse', 'superficie', 'localisation_lat', 'localisation_lng')
+            ->whereNotNull('localisation_lat')
+            ->whereNotNull('localisation_lng')
+            ->get();
+
+        return response()->json($batiments);
     }
 
     protected function jsonResponse($data, $message = '', $status = 'success', $code = 200)

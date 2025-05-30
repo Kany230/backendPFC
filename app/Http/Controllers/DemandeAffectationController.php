@@ -117,24 +117,23 @@ public function index(Request $request)
         ]);
     }
 
-    public function getStatistiques()
-{
-    $statistiques = [
-        'total' => DemandeAffectation::count(),
-        'en_attente' => DemandeAffectation::where('statut', 'En attente')->count(),
-        'en_cours' => DemandeAffectation::where('statut', 'En cours')->count(),
-        'approuvees' => DemandeAffectation::where('statut', 'Approuvee')->count(),
-        'refusees' => DemandeAffectation::where('statut', 'Refusee')->count(),
-        'ce_mois' => DemandeAffectation::whereMonth('dateCreation', now()->month)
-            ->whereYear('dateCreation', now()->year)
-            ->count()
-    ];
-    
-    return response()->json([
-        'status' => 'success',
-        'data' => $statistiques
-    ]);
-}
+    public function getStatistiques(){
 
+        $statistiques = [
+            'total' => DemandeAffectation::count(),
+            'en_attente' => DemandeAffectation::where('statut', 'En attente')->count(),
+            'en_cours' => DemandeAffectation::where('statut', 'En cours')->count(),
+            'approuvees' => DemandeAffectation::where('statut', 'Approuvee')->count(),
+            'refusees' => DemandeAffectation::where('statut', 'Refusee')->count(),
+            'ce_mois' => DemandeAffectation::whereMonth('created_at', now()->month)
+                ->whereYear('created_at', now()->year)
+                ->count()
+        ];
+        
+        return response()->json([
+            'status' => 'success',
+            'data' => $statistiques
+        ]);
+    }
 
 }
